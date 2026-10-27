@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <!-- Load MediaPipe and Three.js libraries -->
+  <script src="https://jsdelivr.net" crossorigin="anonymous"></script>
+  <script src="https://jsdelivr.net" crossorigin="anonymous"></script>
+  <script src="https://cloudflare.com"></script>
+</head>
+<body>
+  <!-- Hidden video element for webcam, visible canvas for AR overlay -->
+  <video id="webcam" autoplay playsinline style="display:none;"></video>
+  <canvas id="ar-canvas" style="position:fixed; top:0; left:0; width:100vw; height:100vh;"></canvas>
+
+  <script>
+    const videoElement = document.getElementById('webcam');
+    const canvasElement = document.getElementById('ar-canvas');
+
+    // 1. Setup Three.js Scene
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({ canvas: canvasElement, alpha: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+
+    // Create a simple 3D Arrow (Cone + Cylinder)
+    const arrowGroup = new THREE.Group();
+    const coneGeo = new THREE.ConeGeometry(0.2, 0.5, 32);
+    const coneMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+    const arrowTip = new THREE.Mesh(coneGeo, coneMat);
+    arrowTip.position.y = 0.25;
+    arrowGroup.add(arrowTip);
+    scene.add(arrowGroup);
+    
+    camera.position.z = 5;
+
+    // 2. Handle MediaPipe Results
+    function onResults(results) {
+      if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+        // Get the first detected hand
+        const hand = results.multiHandLandmarks[0];
+        
+        // Landmark 8 is the Index Fingertip
+        const indexTip = hand[8]; 
+
+        // Convert MediaPipe normalized coordinates (0 to 1) to Three.js screen space
+        const x = (indexTip.x - 0.5) * 10; 
+        const y = -(indexTip.y - 0.5) * 7; // Invert Y because Web GL and video axes differ
+        const z = -indexTip.z * 10;        // Depth estimation
+
+        // Transpose the arrow to the index finger position
+        arrowGroup.position.set(x, y, z);
+        arrowGroup.visible = true;
+      } else {
+        arrowGroup.visible = false;
+      }
+      renderer.render(scene, camera);
+    }
+
+    // 3. Initialize MediaPipe Hands
+    const hands = new Hands({locateFile: (file) => `https://jsdelivr.net{file}`});
+    hands.setOptions({
+      maxNumHands: 2,
+      modelComplexity: 1,
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence: 0.5
+    });
+    hands.onResults(onResults);
+
+    // 4. Start Camera
+    const cameraUtils = new Camera(videoElement, {
+      onFrame: async () => { await hands.send({image: videoElement}); },
+      width: 1280,
+      height: 720
+    });
+    cameraUtils.start();
+  </script>
+</body>
+</html>
